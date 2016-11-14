@@ -91,10 +91,11 @@ main = do
 Return 4
 Raise
 ```
-为了说明上面的程序究竟发生了什么，我写了个等价的 C++ 版：
+为了说明上面的程序究竟发生了什么，我写了个等价的 C++ 版（Visual C++ 2015）：
 ```C++
+#include "stdafx.h"
 #include <iostream>
-#include <map>
+#include <functional>
 using namespace std;
 
 template <typename T>
@@ -122,9 +123,6 @@ public:
         }
         cout << endl;
     }
-    template <typename T, typename U>
-    friend M<U> bind(M<T> m1, M<U>(*morph)(T));
-private:
     Type type;
     T value;
 };
@@ -142,7 +140,7 @@ M<T> raise()
 }
 
 template <typename T, typename U>
-M<U> bind(M<T> m1, M<U>(*morph)(T))
+M<U> operator>>=(M<T> m1, function<M<U>(T)> morph)
 {
     if (m1.type == M<T>::excp)
     {
@@ -154,72 +152,29 @@ M<U> bind(M<T> m1, M<U>(*morph)(T))
     }
 }
 
-map<char, int> closure;
-
-M<int> case1_step2(int res)
-{
-    closure.insert(pair<char, int>('b', res));
-    if (closure.find('b')->second == 0)
-    {
-        return raise<int>();
-    }
-    return unit(
-        closure.find('a')->second /
-        closure.find('b')->second
-    );
-}
-
-M<int> case1_step1(int res)
-{
-    closure.insert(pair<char, int>('a', res));
-    return bind(
-        unit(2),
-        case1_step2
-    );
-}
-
-M<int> case2_step3(int res)
-{
-    return unit(4);
-}
-
-M<int> case2_step2(int res)
-{
-    closure.insert(pair<char, int>('b', res));
-    if (closure.find('b')->second == 0)
-    {
-        return raise<int>();
-    }
-    return bind(
-        unit(
-            closure.find('a')->second /
-            closure.find('b')->second),
-        case2_step3
-    );
-}
-
-M<int> case2_step1(int res)
-{
-    closure.insert(pair<char, int>('a', res));
-    return bind(
-        unit(0),
-        case1_step2
-    );
-}
-
 int main()
 {
-    bind(
-        unit(8),
-        case1_step1
-    ).print(); // 4
+    (unit(8) >>= function<M<int>(int)>([](int a){
+        return unit(2) >>= function<M<int>(int)>([a](int b) {
+            if (b == 0)
+            {
+                return raise<int>();
+            }
+            return unit(a / b);
+        });
+    })).print(); // 4
 
-    closure.clear();
-
-    bind(
-        unit(8),
-        case2_step1
-    ).print(); // exception
+    (unit(8) >>= function<M<int>(int)>([](int a) {
+        return unit(0) >>= function<M<int>(int)>([a](int b) {
+            if (b == 0)
+            {
+                return raise<int>();
+            }
+            return unit(a / b) >>= function<M<int>(int)>([](int){
+                return unit(4);
+            });
+        });
+    })).print(); // exception
 
     return 0;
 }
@@ -229,6 +184,5 @@ int main()
 4
 exception
 ```
-这里用 map 来存取变量的值，等有空改成 lambda 好看一点。
 
 总结：Monad 是一种抽象方法，用于封装一部分操作，最终目的是为了组装函数。
